@@ -58,10 +58,10 @@ chown -R postgres:postgres /data
 chmod 700 /data/pgdata
 
 ########################################
-# CREATE .pgpass
+# CREATE .pgpass FOR pg_basebackup
 ########################################
 
-echo "$PRIMARY_IP:5432:*:$REPL_USER:$REPL_PASS" > /var/lib/postgresql/.pgpass
+echo "$PRIMARY_IP:5432:replication:$REPL_USER:$REPL_PASS" > /var/lib/postgresql/.pgpass
 chown postgres:postgres /var/lib/postgresql/.pgpass
 chmod 600 /var/lib/postgresql/.pgpass
 
@@ -79,9 +79,6 @@ done
 # WAIT FOR REPLICATION USER
 # pg_isready only confirms the port is open — the replication user is
 # created a few seconds after PostgreSQL starts on the primary.
-# We wait here until the user can actually authenticate.
-# password_encryption = md5 is set in primary's postgresql.conf so
-# passwords are stored as md5 and match the pg_hba.conf md5 entries.
 ########################################
 
 echo "Waiting for replication user on primary..."
@@ -93,8 +90,8 @@ done
 
 ########################################
 # RUN BASEBACKUP WITH RETRIES
-# -X stream opens a second connection to stream WAL during the backup,
-# preventing any WAL gap between the snapshot and the start of replication.
+# -X stream opens a second connection to stream WAL during the backup
+# so there is no WAL gap between the snapshot and replication start.
 ########################################
 
 echo "Running pg_basebackup..."
@@ -124,6 +121,38 @@ for attempt in {1..10}; do
     exit 1
   fi
 done
+
+########################################
+# VERIFY STANDBY SIGNAL FILE
+# pg_basebackup -R should create standby.signal. Without it PostgreSQL
+# starts as a primary, not a standby, and replication never initiates.
+########################################
+
+if [ ! -f /data/pgdata/standby.signal ]; then
+  echo "ERROR: standby.signal not found — pg_basebackup -R did not complete correctly"
+  exit 1
+fi
+
+########################################
+# WRITE PRIMARY_CONNINFO WITH EXPLICIT PASSWORD
+# pg_basebackup -R writes primary_conninfo to postgresql.auto.conf but
+# does NOT include the password. When the replica PostgreSQL process
+# starts it needs credentials to begin streaming. We overwrite the entry
+# with an explicit password and application_name so the connection works
+# without relying on .pgpass lookups at runtime.
+########################################
+
+echo "Writing primary_conninfo with credentials..."
+
+# Remove any primary_conninfo / primary_slot_name lines written by pg_basebackup
+sed -i "/^primary_conninfo/d;/^primary_slot_name/d" /data/pgdata/postgresql.auto.conf
+
+cat >> /data/pgdata/postgresql.auto.conf <<EOF
+primary_conninfo = 'host=$PRIMARY_IP port=5432 user=$REPL_USER password=$REPL_PASS application_name=replica'
+primary_slot_name = 'replica_slot'
+EOF
+
+chown postgres:postgres /data/pgdata/postgresql.auto.conf
 
 ########################################
 # SYSTEMD SERVICE
@@ -158,5 +187,10 @@ systemctl enable postgresql-custom
 
 echo "Starting replica..."
 systemctl start postgresql-custom
+
+# Confirm replication is streaming
+sleep 5
+sudo -u postgres /usr/lib/postgresql/$PG_VERSION/bin/pg_isready -q && \
+  echo "Replica is up." || echo "WARNING: replica did not start cleanly — check /data/pgdata/logfile"
 
 echo "Replica setup complete."
