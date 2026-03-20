@@ -25,7 +25,7 @@ fi
 
 DEVICE=""
 for i in {1..30}; do
-  DEVICE=$(lsblk -dn -o NAME,TYPE | awk '$2=="disk"{print $1}' | grep -v "^${ROOT_DISK}$" | head -n1)
+  DEVICE=$(lsblk -dn -o NAME,TYPE | awk '$2=="disk"{print $1}' | grep -v "^$${ROOT_DISK}$" | head -n1)
   if [ -n "$DEVICE" ]; then
     DEVICE="/dev/$DEVICE"
     break
