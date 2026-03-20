@@ -53,6 +53,12 @@ echo "$DEVICE /data ext4 defaults,nofail 0 2" >> /etc/fstab
 systemctl stop postgresql || true
 systemctl disable postgresql || true
 systemctl mask postgresql || true
+# Also mask the instance unit — on Ubuntu 22.04 the actual running service
+# is postgresql@14-main.service, which can restart independently of the
+# postgresql.service meta-unit if only the meta-unit is masked.
+systemctl stop "postgresql@${PG_VERSION}-main" || true
+systemctl disable "postgresql@${PG_VERSION}-main" || true
+systemctl mask "postgresql@${PG_VERSION}-main" || true
 
 rm -rf /var/lib/postgresql/$PG_VERSION/main || true
 rm -rf /etc/postgresql/$PG_VERSION/main || true
@@ -65,7 +71,12 @@ chmod 700 /data/pgdata
 # CREATE .pgpass FOR pg_basebackup
 ########################################
 
-echo "$PRIMARY_IP:5432:replication:$REPL_USER:$REPL_PASS" > /var/lib/postgresql/.pgpass
+# Use * for the database field so this entry matches both the replication
+# protocol connection (pg_basebackup) and the postgres-database psql check
+# that waits for the replication user. A database-specific entry of
+# "replication" would cause the psql check to never find the password and
+# loop forever, stalling the entire script before pg_basebackup ever runs.
+echo "$PRIMARY_IP:5432:*:$REPL_USER:$REPL_PASS" > /var/lib/postgresql/.pgpass
 chown postgres:postgres /var/lib/postgresql/.pgpass
 chmod 600 /var/lib/postgresql/.pgpass
 
