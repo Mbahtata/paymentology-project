@@ -14,7 +14,8 @@ permissions:
 
 env:
   TF_VERSION: "1.7.5"
-  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  AWS_REGION: "us-east-1"
+  TF_STATE_BUCKET: "paymentology-tf-state-562578955205"
 
 jobs:
   terraform:
@@ -41,7 +42,7 @@ jobs:
         id: init
         run: |
           terraform init \
-            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="bucket=${{ env.TF_STATE_BUCKET }}" \
             -backend-config="key=paymentology/terraform.tfstate" \
             -backend-config="region=${{ env.AWS_REGION }}"
 
