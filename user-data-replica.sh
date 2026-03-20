@@ -48,7 +48,11 @@ echo "$DEVICE /data ext4 defaults,nofail 0 2" >> /etc/fstab
 # REMOVE DEFAULT UBUNTU CLUSTER
 ########################################
 
+# Stop, disable, and mask the default Ubuntu postgresql service so it
+# can never restart and conflict with our custom data directory.
 systemctl stop postgresql || true
+systemctl disable postgresql || true
+systemctl mask postgresql || true
 
 rm -rf /var/lib/postgresql/$PG_VERSION/main || true
 rm -rf /etc/postgresql/$PG_VERSION/main || true
