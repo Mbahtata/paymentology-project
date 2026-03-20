@@ -67,28 +67,55 @@ chown postgres:postgres /var/lib/postgresql/.pgpass
 chmod 600 /var/lib/postgresql/.pgpass
 
 ########################################
-# WAIT FOR PRIMARY
+# WAIT FOR PRIMARY + REPLICATION USER
+# pg_isready only confirms PostgreSQL is up — we also wait until the
+# replication user is connectable, since it is created a few seconds
+# after PostgreSQL starts on the primary.
 ########################################
 
-echo "Waiting for primary..."
-
+echo "Waiting for primary PostgreSQL to be ready..."
 until pg_isready -h $PRIMARY_IP -p 5432; do
+  echo "  primary not ready, retrying in 5s..."
   sleep 5
 done
 
+echo "Waiting for replication user on primary..."
+until sudo -u postgres PGPASSFILE=/var/lib/postgresql/.pgpass \
+  psql -h $PRIMARY_IP -p 5432 -U $REPL_USER -d postgres -c "SELECT 1" > /dev/null 2>&1; do
+  echo "  replication user not ready yet, retrying in 10s..."
+  sleep 10
+done
+
 ########################################
-# RUN BASEBACKUP
+# RUN BASEBACKUP WITH RETRIES
 ########################################
 
 echo "Running pg_basebackup..."
 
-sudo -u postgres pg_basebackup \
-  -h $PRIMARY_IP \
-  -D /data/pgdata \
-  -U $REPL_USER \
-  -P \
-  -R \
-  -S replica_slot
+for attempt in {1..10}; do
+  # Clean target dir between attempts
+  rm -rf /data/pgdata && mkdir -p /data/pgdata
+  chown postgres:postgres /data/pgdata && chmod 700 /data/pgdata
+
+  if sudo -u postgres PGPASSFILE=/var/lib/postgresql/.pgpass \
+    pg_basebackup \
+      -h $PRIMARY_IP \
+      -D /data/pgdata \
+      -U $REPL_USER \
+      -P -R \
+      -S replica_slot; then
+    echo "pg_basebackup succeeded on attempt $attempt."
+    break
+  fi
+
+  echo "pg_basebackup failed (attempt $attempt/10), retrying in 15s..."
+  sleep 15
+
+  if [ "$attempt" -eq 10 ]; then
+    echo "pg_basebackup failed after 10 attempts — aborting."
+    exit 1
+  fi
+done
 
 ########################################
 # REGISTER SYSTEMD SERVICE FOR REBOOT PERSISTENCE
