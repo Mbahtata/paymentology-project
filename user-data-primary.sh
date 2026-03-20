@@ -55,9 +55,9 @@ systemctl mask postgresql || true
 # Also mask the instance unit — on Ubuntu 22.04 the actual running service
 # is postgresql@14-main.service, which can restart independently of the
 # postgresql.service meta-unit if only the meta-unit is masked.
-systemctl stop "postgresql@${PG_VERSION}-main" || true
-systemctl disable "postgresql@${PG_VERSION}-main" || true
-systemctl mask "postgresql@${PG_VERSION}-main" || true
+systemctl stop "postgresql@$${PG_VERSION}-main" || true
+systemctl disable "postgresql@$${PG_VERSION}-main" || true
+systemctl mask "postgresql@$${PG_VERSION}-main" || true
 
 echo "Removing default cluster completely..."
 rm -rf /var/lib/postgresql/$PG_VERSION/main
