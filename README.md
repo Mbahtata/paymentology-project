@@ -13,6 +13,19 @@ Terraform project that provisions a PostgreSQL 14 primary/replica streaming repl
 ## CI/CD
 
 GitHub Actions runs `terraform plan` on every PR and `terraform apply` on merge to `main`.
+A separate manual `Terraform Destroy` workflow tears down all resources — requires typing `destroy` as confirmation.
+
+## Verifying Replication
+
+After deployment SSH into each instance and run:
+
+```bash
+# Primary — should show one active streaming row
+sudo -u postgres psql -c "SELECT client_addr, state FROM pg_stat_replication;"
+
+# Replica — should show status = streaming
+sudo -u postgres psql -c "SELECT status, sender_host FROM pg_stat_wal_receiver;"
+```
 
 ## Usage
 
