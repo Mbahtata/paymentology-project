@@ -17,7 +17,6 @@ DEBIAN_FRONTEND=noninteractive apt install -y postgresql-$PG_VERSION
 
 echo "Waiting for EBS disk..."
 
-# Identify root disk device and exclude it so we only format the attached EBS volume
 ROOT_DISK=$(lsblk -no pkname "$(findmnt -n -o SOURCE /)" 2>/dev/null | head -n1)
 if [ -z "$ROOT_DISK" ]; then
   ROOT_DISK=$(lsblk -dn -o NAME | head -n1)
@@ -46,7 +45,7 @@ mount $DEVICE /data
 echo "$DEVICE /data ext4 defaults,nofail 0 2" >> /etc/fstab
 
 ########################################
-# REMOVE DEFAULT UBUNTU CLUSTER COMPLETELY
+# REMOVE DEFAULT UBUNTU CLUSTER
 ########################################
 
 systemctl stop postgresql || true
@@ -67,10 +66,7 @@ chown postgres:postgres /var/lib/postgresql/.pgpass
 chmod 600 /var/lib/postgresql/.pgpass
 
 ########################################
-# WAIT FOR PRIMARY + REPLICATION USER
-# pg_isready only confirms PostgreSQL is up — we also wait until the
-# replication user is connectable, since it is created a few seconds
-# after PostgreSQL starts on the primary.
+# WAIT FOR PRIMARY POSTGRESQL
 ########################################
 
 echo "Waiting for primary PostgreSQL to be ready..."
@@ -78,6 +74,15 @@ until pg_isready -h $PRIMARY_IP -p 5432; do
   echo "  primary not ready, retrying in 5s..."
   sleep 5
 done
+
+########################################
+# WAIT FOR REPLICATION USER
+# pg_isready only confirms the port is open — the replication user is
+# created a few seconds after PostgreSQL starts on the primary.
+# We wait here until the user can actually authenticate.
+# FIX: the previous md5/scram-sha-256 mismatch caused this loop to
+# spin forever; that is now resolved in the primary script.
+########################################
 
 echo "Waiting for replication user on primary..."
 until sudo -u postgres PGPASSFILE=/var/lib/postgresql/.pgpass \
@@ -88,12 +93,13 @@ done
 
 ########################################
 # RUN BASEBACKUP WITH RETRIES
+# -X stream opens a second connection to stream WAL during the backup,
+# preventing any WAL gap between the snapshot and the start of replication.
 ########################################
 
 echo "Running pg_basebackup..."
 
 for attempt in {1..10}; do
-  # Clean target dir between attempts
   rm -rf /data/pgdata && mkdir -p /data/pgdata
   chown postgres:postgres /data/pgdata && chmod 700 /data/pgdata
 
@@ -102,7 +108,9 @@ for attempt in {1..10}; do
       -h $PRIMARY_IP \
       -D /data/pgdata \
       -U $REPL_USER \
-      -P -R \
+      -P \
+      -R \
+      -X stream \
       -S replica_slot; then
     echo "pg_basebackup succeeded on attempt $attempt."
     break
@@ -118,7 +126,7 @@ for attempt in {1..10}; do
 done
 
 ########################################
-# REGISTER SYSTEMD SERVICE FOR REBOOT PERSISTENCE
+# SYSTEMD SERVICE
 ########################################
 
 echo "Registering systemd service for reboot persistence..."
@@ -131,6 +139,7 @@ After=network.target
 [Service]
 Type=forking
 User=postgres
+PIDFile=/data/pgdata/postmaster.pid
 ExecStart=/usr/lib/postgresql/$PG_VERSION/bin/pg_ctl -D /data/pgdata -l /data/pgdata/logfile start
 ExecStop=/usr/lib/postgresql/$PG_VERSION/bin/pg_ctl -D /data/pgdata stop
 ExecReload=/usr/lib/postgresql/$PG_VERSION/bin/pg_ctl -D /data/pgdata reload
@@ -148,7 +157,6 @@ systemctl enable postgresql-custom
 ########################################
 
 echo "Starting replica..."
-
 systemctl start postgresql-custom
 
 echo "Replica setup complete."
