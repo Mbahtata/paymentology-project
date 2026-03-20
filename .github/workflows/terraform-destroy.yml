@@ -11,6 +11,7 @@ env:
   TF_VERSION: "1.7.5"
   AWS_REGION: "us-east-1"
   TF_STATE_BUCKET: "paymentology-tf-state-562578955205"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   destroy:
