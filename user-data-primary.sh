@@ -69,14 +69,12 @@ listen_addresses = '*'
 wal_level = replica
 max_wal_senders = 10
 max_replication_slots = 10
+password_encryption = md5
 EOF
 
-# FIX: use scram-sha-256 to match PostgreSQL 14's default password_encryption.
-# Using md5 here while PG14 stores passwords as scram-sha-256 causes every
-# authentication attempt to fail with "password authentication failed".
 cat >> /data/pgdata/pg_hba.conf <<EOF
-host  replication  $REPL_USER  10.0.0.0/16  scram-sha-256
-host  all          all         10.0.0.0/16  scram-sha-256
+host  replication  $REPL_USER  10.0.0.0/16  md5
+host  all          all         10.0.0.0/16  md5
 EOF
 
 ########################################

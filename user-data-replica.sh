@@ -80,8 +80,8 @@ done
 # pg_isready only confirms the port is open — the replication user is
 # created a few seconds after PostgreSQL starts on the primary.
 # We wait here until the user can actually authenticate.
-# FIX: the previous md5/scram-sha-256 mismatch caused this loop to
-# spin forever; that is now resolved in the primary script.
+# password_encryption = md5 is set in primary's postgresql.conf so
+# passwords are stored as md5 and match the pg_hba.conf md5 entries.
 ########################################
 
 echo "Waiting for replication user on primary..."
